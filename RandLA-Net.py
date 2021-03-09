@@ -85,7 +85,10 @@ class AttentivePooling(nn.Module):
         self.score_fn = nn.Sequential(nn.Linear(d_in, d_in),
                                       nn.Softmax(dim=-2))
 
-        self.mlp = MLP(d_in=d_in, d_out=d_out)
+        self.mlp = MLP(d_in=d_in,
+                       d_out=d_out,
+                       bn=True,
+                       activation_fn=nn.ReLU())
 
     def forward(self, feat):
         '''
@@ -109,9 +112,18 @@ class LocalFeatureAggregation(nn.Module):
 
         self.num_neighbours = num_neighbours
 
-        self.mlp1 = MLP(d_in=d_in, d_out=d_out // 2)
-        self.mlp2 = MLP(d_in=d_out, d_out=2 * d_out)
-        self.mlp3 = MLP(d_in=d_in, d_out=2 * d_out, bn=True)
+        self.mlp1 = MLP(d_in=d_in,
+                        d_out=d_out // 2,
+                        bn=True,
+                        activation_fn=nn.ReLU())
+        self.mlp2 = MLP(d_in=d_out,
+                        d_out=2 * d_out,
+                        bn=True,
+                        activation_fn=nn.ReLU())
+        self.mlp_shortcut = MLP(d_in=d_in,
+                                d_out=2 * d_out,
+                                bn=True,
+                                activation_fn=nn.ReLU())
 
         self.lose1 = LocalSpatialEncoding(d_out=d_out // 2)
         self.lose2 = LocalSpatialEncoding(d_out=d_out // 2)
@@ -133,7 +145,7 @@ class LocalFeatureAggregation(nn.Module):
                          xyz.cpu().contiguous(),
                          self.num_neighbours)  # [B, N, K]
 
-        residual = self.mlp3(feat)  # [B, 2*d_out, N, 1]
+        residual = self.mlp_shortcut(feat)  # [B, 2*d_out, N, 1]
 
         feat1 = self.mlp1(feat)  # [B, d_out//2, N, 1]
         lose_feat1 = self.lose1(feat1, xyz, knn_output)  # [B, d_out, N, K]
@@ -158,7 +170,7 @@ class RandLANet(nn.Module):
 
         self.num_neighbours = num_neighbours
         self.decimation = decimation
-        self.fc1 = nn.Linear(in_features=d_in, out_features=8)
+        self.fc_start = nn.Linear(in_features=d_in, out_features=8)
 
         self.encoder = nn.ModuleList([
             LocalFeatureAggregation(d_in=8,
@@ -169,7 +181,7 @@ class RandLANet(nn.Module):
             LocalFeatureAggregation(2 * 128, 256, num_neighbours)
         ])
 
-        self.mlp = MLP(d_in=512, d_out=512, activation_fn=nn.ReLU())
+        self.mlp = MLP(d_in=512, d_out=512, bn=True, activation_fn=nn.ReLU())
 
         self.decoder = nn.ModuleList([
             MLP(d_in=512, d_out=256, bn=True, activation_fn=nn.ReLU()),
@@ -199,7 +211,8 @@ class RandLANet(nn.Module):
 
         feat_stack = []
 
-        feat = self.fc1(points).transpose(-2, -1).unsqueeze(-1)  # [B, 8, N, 1]
+        feat = self.fc_start(points).transpose(-2, -1).unsqueeze(
+            -1)  # [B, 8, N, 1]
 
         for lfa in self.encoder:
 
