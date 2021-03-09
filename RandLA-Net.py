@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 from torch_points_kernels import knn
@@ -230,7 +229,8 @@ class RandLANet(nn.Module):
 
             feat = mlp(feat)  # [B, 512, N//256, 1]
 
-            # find one nearset neighbour for each upsampled point in the downsampled set
+            # find one nearset neighbour for each upsampled point in the
+            # downsampled set
             idx, _ = knn(xyz[:, :N // decimation_ratio].contiguous(),
                          xyz[:, :d * N // decimation_ratio].contiguous(),
                          1)  # [B, d*N//decimation, 1]
