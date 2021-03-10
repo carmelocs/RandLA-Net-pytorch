@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-# from torch_points_kernels import knn
+from torch_points_kernels import knn
 
 
 class MLP(nn.Module):
