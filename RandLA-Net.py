@@ -277,7 +277,6 @@ if __name__ == '__main__':
     print(f"class scores: {class_scores.shape}")
     class_label = class_scores.transpose(-2, -1).max(-1)
     print(f"class label: {class_label[0].shape}")
-<<<<<<< HEAD
 
     import time
 
@@ -286,5 +285,3 @@ if __name__ == '__main__':
     sampled_pc = pc[:, :NUM_SAMPLE, :]
     t2 = time.time()
     print(f'sampling time: {t2 - t1}\nsampled pc: {sampled_pc.shape}')
-=======
->>>>>>> d55be28636de2547ad0864fa73c445215c7be845
