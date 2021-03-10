@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 # from torch_points_kernels import knn
@@ -230,7 +229,8 @@ class RandLANet(nn.Module):
 
             feat = mlp(feat)  # [B, 512, N//256, 1]
 
-            # find one nearset neighbour for each upsampled point in the downsampled set
+            # find one nearset neighbour for each upsampled point in the
+            # downsampled set
             idx, _ = knn(xyz[:, :N // decimation_ratio].contiguous(),
                          xyz[:, :d * N // decimation_ratio].contiguous(),
                          1)  # [B, d*N//decimation, 1]
@@ -277,6 +277,7 @@ if __name__ == '__main__':
     print(f"class scores: {class_scores.shape}")
     class_label = class_scores.transpose(-2, -1).max(-1)
     print(f"class label: {class_label[0].shape}")
+<<<<<<< HEAD
 
     import time
 
@@ -285,3 +286,5 @@ if __name__ == '__main__':
     sampled_pc = pc[:, :NUM_SAMPLE, :]
     t2 = time.time()
     print(f'sampling time: {t2 - t1}\nsampled pc: {sampled_pc.shape}')
+=======
+>>>>>>> d55be28636de2547ad0864fa73c445215c7be845
