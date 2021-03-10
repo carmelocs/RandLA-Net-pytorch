@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from torch_points_kernels import knn
+# from torch_points_kernels import knn
 
 
 class MLP(nn.Module):
@@ -260,7 +260,7 @@ if __name__ == '__main__':
     torch.manual_seed(0)
 
     BATCH = 8
-    NUM_POINT = 2**10
+    NUM_POINT = 10**6
     D_XYZ = 3
     D_IN = 4
     NUM_NEIGHBOUR = 16
@@ -277,3 +277,11 @@ if __name__ == '__main__':
     print(f"class scores: {class_scores.shape}")
     class_label = class_scores.transpose(-2, -1).max(-1)
     print(f"class label: {class_label[0].shape}")
+
+    import time
+
+    NUM_SAMPLE = NUM_POINT//4
+    t1 = time.time()
+    sampled_pc = pc[:, :NUM_SAMPLE, :]
+    t2 = time.time()
+    print(f'sampling time: {t2 - t1}\nsampled pc: {sampled_pc.shape}')
