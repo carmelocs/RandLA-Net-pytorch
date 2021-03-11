@@ -97,7 +97,7 @@ class AttentivePooling(nn.Module):
             agg_feat: [B, d_out, N, 1]
         '''
         scores = self.score_fn(feat.permute(0, 2, 3, 1)).permute(
-            0, 3, 1, 2)  # [B, N, K, d_in] -> [B, d_in, N, K]
+            0, 3, 1, 2).contiguous()  # [B, N, K, d_in] -> [B, d_in, N, K]
         feat = torch.sum(scores * feat, dim=-1,
                          keepdim=True)  # [B, d_in, N, 1]
         agg_feat = self.mlp(feat)  # [B, d_out, N, 1]
@@ -260,7 +260,7 @@ if __name__ == '__main__':
     torch.manual_seed(0)
 
     BATCH = 8
-    NUM_POINT = 10**6
+    NUM_POINT = 2**10
     D_XYZ = 3
     D_IN = 4
     NUM_NEIGHBOUR = 16
