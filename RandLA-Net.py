@@ -58,7 +58,7 @@ class LocalSpatialEncoding(nn.Module):
         Input:
             feat: [B, d_in, N, 1]  # d_in == d_out
             xyz: [B, N, 3]
-            knn_output: [B, N, K]
+            knn_output: tuple("idx:[B, N, K]", "dist2:[B, N, K]")
         Output:
             neighbouring_feat: [B, 2*d_out, N, K]
 
@@ -222,7 +222,7 @@ class RandLANet(nn.Module):
 
         feat = self.fc_start(points).transpose(-2, -1).unsqueeze(
             -1)  # [B, 8, N, 1]
-        
+
         feat_rs = feat
         xyz_rs = xyz
 
@@ -231,8 +231,8 @@ class RandLANet(nn.Module):
             feat_stack.append(feat_rs)
             feat_rs = lfa(feat_rs, xyz_rs)  # [B, 2*d_out, N//decimation_ratio, 1]
             decimation_ratio *= d
-            feat_rs = feat_rs[..., :N //decimation_ratio, :]
-            xyz_rs = xyz_rs[..., :N //decimation_ratio, :]
+            feat_rs = feat_rs[..., :N//decimation_ratio, :]
+            xyz_rs = xyz_rs[..., :N//decimation_ratio, :]
             # [B, 512, N//256, 1]
 
         feat = self.mlp(feat_rs)  # [B, 512, N//256, 1]
