@@ -22,6 +22,9 @@ class MLP(nn.Module):
 
     def forward(self, x):
         """
+        Map input from d_in to d_out dimensions by 1x1 kernels with
+        optional Batch Normalization and Activation Function.
+
         Input:
             x: [B, d_in, N, K]
         Output:
@@ -49,8 +52,11 @@ class LocalSpatialEncoding(nn.Module):
 
     def forward(self, feat, xyz, knn_output):
         '''
+        Augment point feature by encoding relative point position (xyz and knn_output) 
+        and then concantenating with the corresponding point feature (feat).
+
         Input:
-            feat: [B, d_in, N, 1]
+            feat: [B, d_in, N, 1]  # d_in == d_out
             xyz: [B, N, 3]
             knn_output: [B, N, K]
         Output:
@@ -91,11 +97,14 @@ class AttentivePooling(nn.Module):
 
     def forward(self, feat):
         '''
+        Aggregate feature by weighted summation.
+
         Input:
             feat: [B, d_in, N, K]
         Output:
             agg_feat: [B, d_out, N, 1]
         '''
+
         scores = self.score_fn(feat.permute(0, 2, 3, 1)).permute(
             0, 3, 1, 2).contiguous()  # [B, N, K, d_in] -> [B, d_in, N, K]
         feat = torch.sum(scores * feat, dim=-1,
@@ -111,14 +120,14 @@ class LocalFeatureAggregation(nn.Module):
 
         self.num_neighbours = num_neighbours
 
-        self.mlp1 = MLP(d_in=d_in,
-                        d_out=d_out // 2,
-                        bn=True,
-                        activation_fn=nn.ReLU())
-        self.mlp2 = MLP(d_in=d_out,
-                        d_out=2 * d_out,
-                        bn=True,
-                        activation_fn=nn.ReLU())
+        self.mlp_in = MLP(d_in=d_in,
+                          d_out=d_out // 2,
+                          bn=True,
+                          activation_fn=nn.ReLU())
+        self.mlp_out = MLP(d_in=d_out,
+                           d_out=2 * d_out,
+                           bn=True,
+                           activation_fn=nn.ReLU())
         self.mlp_shortcut = MLP(d_in=d_in,
                                 d_out=2 * d_out,
                                 bn=True,
@@ -134,28 +143,29 @@ class LocalFeatureAggregation(nn.Module):
 
     def forward(self, feat, xyz):
         '''
+        Stack LoSE and AttPooling units with a skip connection.
+
         Input:
             feat: [B, d_in, N, 1]
             xyz: [B, N, 3]
         Output:
-            aggregated_feat: [B, N, 2*d_out]
+            aggregated_feat: [B, 2*d_out, N, 1]
         '''
-        knn_output = knn(xyz.cpu().contiguous(),
-                         xyz.cpu().contiguous(),
+
+        knn_output = knn(xyz.contiguous(), xyz.contiguous(),
                          self.num_neighbours)  # [B, N, K]
 
         residual = self.mlp_shortcut(feat)  # [B, 2*d_out, N, 1]
 
-        feat1 = self.mlp1(feat)  # [B, d_out//2, N, 1]
+        feat1 = self.mlp_in(feat)  # [B, d_out//2, N, 1]
         lose_feat1 = self.lose1(feat1, xyz, knn_output)  # [B, d_out, N, K]
         att_feat1 = self.pool1(lose_feat1)  # [B, d_out//2, N, 1]
 
         lose_feat2 = self.lose2(att_feat1, xyz, knn_output)  # [B, d_out, N, K]
         att_feat2 = self.pool2(lose_feat2)  # [B, d_out, N, 1]
+        feat_out = self.mlp_out(att_feat2)  # [B, 2*d_out, N, 1]
 
-        feat2 = self.mlp2(att_feat2)  # [B, 2*d_out, N, 1]
-
-        return self.lrelu(feat2 + residual)
+        return self.lrelu(feat_out + residual)
 
 
 class RandLANet(nn.Module):
@@ -190,7 +200,7 @@ class RandLANet(nn.Module):
         ])
 
         self.fc_final = nn.Sequential(
-            MLP(d_in=8 + 8, d_out=64, bn=True, activation_fn=nn.ReLU()),
+            MLP(d_in=2 * 8, d_out=64, bn=True, activation_fn=nn.ReLU()),
             MLP(d_in=64, d_out=32, bn=True, activation_fn=nn.ReLU()),
             nn.Dropout(p=dropout), MLP(d_in=32, d_out=num_classes))
 
@@ -203,7 +213,7 @@ class RandLANet(nn.Module):
         '''
 
         B, N, _ = points.size()
-        d = self.decimation
+        d = self.decimation  # 4
         decimation_ratio = 1
 
         xyz = points[..., :3]  # [B, N, 3]
@@ -212,18 +222,20 @@ class RandLANet(nn.Module):
 
         feat = self.fc_start(points).transpose(-2, -1).unsqueeze(
             -1)  # [B, 8, N, 1]
+        
+        feat_rs = feat
+        xyz_rs = xyz
 
         for lfa in self.encoder:
 
-            feat_stack.append(feat)
+            feat_stack.append(feat_rs)
+            feat_rs = lfa(feat_rs, xyz_rs)  # [B, 2*d_out, N//decimation_ratio, 1]
             decimation_ratio *= d
-            feat = lfa(
-                feat[:, :, :N // decimation_ratio],
-                xyz[:, :N //
-                    decimation_ratio])  # [B, 2*d_out, N//decimation_ratio, 1]
-        # [B, 512, N//256, 1]
+            feat_rs = feat_rs[..., :N //decimation_ratio, :]
+            xyz_rs = xyz_rs[..., :N //decimation_ratio, :]
+            # [B, 512, N//256, 1]
 
-        feat = self.mlp(feat)  # [B, 512, N//256, 1]
+        feat = self.mlp(feat_rs)  # [B, 512, N//256, 1]
 
         for mlp in self.decoder:
 
@@ -231,18 +243,18 @@ class RandLANet(nn.Module):
 
             # find one nearset neighbour for each upsampled point in the
             # downsampled set
-            idx, _ = knn(xyz[:, :N // decimation_ratio].contiguous(),
-                         xyz[:, :d * N // decimation_ratio].contiguous(),
+            idx, _ = knn(xyz[..., :N // decimation_ratio, :].contiguous(),
+                         xyz[..., :d * N // decimation_ratio, :].contiguous(),
                          1)  # [B, d*N//decimation, 1]
             extended_idx = idx.unsqueeze(1).repeat(
-                1, feat.size(1), 1, 1)  # [B, d_out, d*N//decimation, 1]
+                1, feat.size(1), 1, 1)  # [B, d_out, d*N//decimation_ratio, 1]
             # print(f"extended_idx: {extended_idx.shape}")
 
             feat_neighbour = torch.gather(
-                feat, -2, extended_idx)  # [B, d_out, d*N//decimation, 1]
+                feat, -2, extended_idx)  # [B, d_out, d*N//decimation_ratio, 1]
             # print(f"feat_neighbour: {feat_neighbour.shape}")
 
-            feat_pop = feat_stack.pop()  # [B, d_out, d*N//decimation, 1]
+            feat_pop = feat_stack.pop()  # [B, d_out, d*N//decimation_ratio, 1]
             # print(f"feat_pop: {feat_pop.shape}")
 
             feat = torch.cat((feat_neighbour, feat_pop), dim=1)
@@ -280,7 +292,7 @@ if __name__ == '__main__':
 
     import time
 
-    NUM_SAMPLE = NUM_POINT//4
+    NUM_SAMPLE = NUM_POINT // 4
     t1 = time.time()
     sampled_pc = pc[:, :NUM_SAMPLE, :]
     t2 = time.time()
